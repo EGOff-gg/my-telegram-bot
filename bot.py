@@ -3,8 +3,7 @@ import re
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-# === Триггерные слова ===
-
+# === Список мата (все слова в нижнем регистре, без знаков) ===
 BAD_WORDS = {
     'анус', 'аборт', 'бздун', 'беспезды', 'бздюх', 'бля', 'блудилище', 'блядво', 'блядеха',
     'блядина', 'блядистка', 'блядище', 'блядки', 'блядование', 'блядовать', 'блядовитый',
@@ -187,17 +186,18 @@ BAD_WORDS = {
     'хуюжить', 'хуюжиться', 'хуюживать', 'хуюживаться', 'хуюшки', 'хуя', 'хуяк', 'хуякать', 'хуями', 'хуярить',
     'хуяриться', 'хуястый', 'хуячий', 'хуячить', 'хуячиться', 'хуяшить', 'целка', 'целку', 'целочка', 'черножопые',
     'чернозадый', 'член', 'шалава', 'шлюха', 'шмара', 'шмарить', 'шмариться', 'хуйло', 'отъебись', 'отьебись',
-    'спам', 'spam', 'мудила', 'пидарасы', 'пипец', 'хз'
+    'спам', 'spam', 'мудила', 'пидарасы'
 }
 
+# === Другие триггеры ===
 THANKS_WORDS = {'спасибо'}
-MONEY_WORDS = {'деньги', 'денег'}
+MONEY_ROOTS = {'деньги', 'денег'}
 OK_WORDS = {'ок', 'окей', 'оки'}
 EAT_WORDS = {'кушать', 'кушали', 'ели'}
 NAMES = {'элина', 'эрик'}
-
-# Смайлы, которые считаем "весёлыми"
 FUNNY_EMOJIS = {'😂', '🤣', '😆', '😹', '😀', '😃', '😄', '😁', '😅', '🙃', '😜', '🤪', '😝', '🤑'}
+
+# === Вспомогательные функции ===
 
 def clean_word(word):
     return re.sub(r'[^а-яё]', '', word.lower())
@@ -215,13 +215,20 @@ def contains_funny_emoji(text):
         return False
     return bool(set(text) & FUNNY_EMOJIS)
 
+def find_first_bad_word(text):
+    """Возвращает первое найденное матерное слово в нормализованном виде"""
+    if not text:
+        return None
+    for word in text.split():
+        clean = clean_word(word)
+        if clean in BAD_WORDS:
+            return clean
+    return None
+
 # === Ответы ===
 
 async def reply_praise(update, context):
-    await update.message.reply_text("Фотка если честно так себе... Мне не нравится. Переделай!")
-
-async def reply_bad_words(update, context):
-    await update.message.reply_text("Получишь по губам и рукам!")
+    await update.message.reply_text("Ты молодец! Держи конфетку!")
 
 async def reply_thanks(update, context):
     await update.message.reply_text("Пожалуйста, обращайся")
@@ -260,9 +267,10 @@ async def handle_text(update, context):
     if not text:
         return
 
-    # 1. Мат
-    if contains_any(text, BAD_WORDS):
-        await reply_bad_words(update, context)
+    # 1. Мат — с подстановкой слова
+    bad_word = find_first_bad_word(text)
+    if bad_word:
+        await update.message.reply_text(f'За "{bad_word}" получишь по губам и рукам!')
         return
 
     # 2. Смайлы
@@ -270,16 +278,16 @@ async def handle_text(update, context):
         await reply_funny_emoji(update, context)
         return
 
-    # 3. Имена (высокий приоритет)
-    words = text_to_words(text)
-    if 'элина' in words:
+    # 3. Имена
+    words_clean = text_to_words(text)
+    if 'элина' in words_clean:
         await reply_elina(update, context)
         return
-    if 'эрик' in words:
+    if 'эрик' in words_clean:
         await reply_erik(update, context)
         return
 
-    # 4. Слово "спасибо"
+    # 4. Спасибо
     if contains_any(text, THANKS_WORDS):
         await reply_thanks(update, context)
         return
@@ -317,8 +325,8 @@ async def start(update, context):
 async def help_command(update, context):
     await update.message.reply_text(
         "Я реагирую на:\n"
-        "📷 Фото → «Фотка если честно так себе... Мне не нравится. Переделай!»\n"
-        "🤬 Мат → «Получишь по губам и рукам!»\n"
+        "📷 Фото → «Ты молодец! Держи конфетку!»\n"
+        "🤬 Мат → «За \"слово\" получишь по губам и рукам!»\n"
         "🙏 «Спасибо» → «Пожалуйста, обращайся»\n"
         "💰 «Деньги/Денег» → «Денег нет! Не было! И не будет!»\n"
         "👌 «Ок» → «не окейкай мне тут»\n"
@@ -334,27 +342,16 @@ async def help_command(update, context):
 
 def main():
     token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise ValueError("Переменная BOT_TOKEN не установлена!")
     app = Application.builder().token(token).build()
     
-    # Команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    
-    # Фото
     app.add_handler(MessageHandler(filters.PHOTO, reply_praise))
-    
-    # Текст
     app.add_handler(MessageHandler(filters.TEXT, handle_text))
-    
-    # Музыка (аудио/файлы с расширением mp3, ogg и т.д.)
     app.add_handler(MessageHandler(filters.AUDIO, reply_music))
-    app.add_handler(MessageHandler(filters.ATTACHMENT & filters.Document.MimeType("audio/mpeg"), reply_music))
-    app.add_handler(MessageHandler(filters.ATTACHMENT & filters.Document.MimeType("audio/ogg"), reply_music))
-    
-    # Голосовые
     app.add_handler(MessageHandler(filters.VOICE, reply_voice))
-    
-    # Пересланные без текста/фото
     app.add_handler(MessageHandler(
         filters.FORWARDED & ~filters.PHOTO & ~filters.TEXT & ~filters.AUDIO & ~filters.VOICE,
         reply_forward_or_link
