@@ -3,7 +3,7 @@ import re
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-# === Списки триггеров ===
+# === Триггерные слова ===
 
 BAD_WORDS = {
     'бля', 'блять', 'блядь', 'сука', 'сучка', 'пизда', 'пиздец', 'хуй', 'хуёвый', 'хуевый',
@@ -12,10 +12,14 @@ BAD_WORDS = {
     'чмо', 'урод', 'скотина', 'сволочь', 'дрочить', 'дрочила', 'залупа', 'мразь'
 }
 
-UNDERSTAND_WORDS = {'понял', 'поняла'}
-EAT_WORDS = {'есть'}
+THANKS_WORDS = {'спасибо'}
+MONEY_WORDS = {'деньги', 'денег'}
+OK_WORDS = {'ок', 'окей', 'оки'}
+EAT_WORDS = {'кушать', 'кушали', 'ели'}
+NAMES = {'элина', 'эрик'}
 
-# === Вспомогательные функции ===
+# Смайлы, которые считаем "весёлыми"
+FUNNY_EMOJIS = {'😂', '🤣', '😆', '😹', '😀', '😃', '😄', '😁', '😅', '🙃', '😜', '🤪', '😝', '🤑'}
 
 def clean_word(word):
     return re.sub(r'[^а-яё]', '', word.lower())
@@ -23,24 +27,17 @@ def clean_word(word):
 def text_to_words(text):
     return {clean_word(w) for w in text.split()}
 
-def contains_bad_word(text):
+def contains_any(text, word_set):
     if not text:
         return False
-    return bool(text_to_words(text) & BAD_WORDS)
+    return bool(text_to_words(text) & word_set)
 
-def contains_understand_word(text):
+def contains_funny_emoji(text):
     if not text:
         return False
-    return bool(text_to_words(text) & UNDERSTAND_WORDS)
+    return bool(set(text) & FUNNY_EMOJIS)
 
-def contains_eat_word(text):
-    if not text:
-        return False
-    # Ищем слово "есть" как отдельное слово (а не внутри "приветствую")
-    words = re.findall(r'\b\w+\b', text.lower())
-    return 'есть' in words
-
-# === Обработчики ответов ===
+# === Ответы ===
 
 async def reply_praise(update, context):
     await update.message.reply_text("Ты молодец! Держи конфетку!")
@@ -48,49 +45,84 @@ async def reply_praise(update, context):
 async def reply_bad_words(update, context):
     await update.message.reply_text("Получишь по губам и рукам!")
 
+async def reply_thanks(update, context):
+    await update.message.reply_text("Пожалуйста, обращайся")
+
 async def reply_money(update, context):
     await update.message.reply_text("Денег нет! Не было! И не будет!")
 
-async def reply_understand(update, context):
-    await update.message.reply_text("Точно понятно?! Или ещё несколько раз объяснить?")
+async def reply_ok(update, context):
+    await update.message.reply_text("не окейкай мне тут")
 
 async def reply_eat(update, context):
-    await update.message.reply_text("На попе шерсть!")
+    await update.message.reply_text("Бегом жрать вам сказали!")
+
+async def reply_elina(update, context):
+    await update.message.reply_text("ЭЛИНА!!!")
+
+async def reply_erik(update, context):
+    await update.message.reply_text("ЭРИК!!!")
+
+async def reply_funny_emoji(update, context):
+    await update.message.reply_text("Не вижу ничего смешного!")
+
+async def reply_music(update, context):
+    await update.message.reply_text("Ща будут дЫки танци")
+
+async def reply_voice(update, context):
+    await update.message.reply_text("Че лень букафками общаться")
 
 async def reply_forward_or_link(update, context):
     await update.message.reply_text("А это точно тут нужно?")
 
-# === Главный текстовый обработчик ===
+# === Основной обработчик текста ===
 
 async def handle_text(update, context):
     text = update.message.text
     if not text:
         return
 
-    words_clean = text_to_words(text)
-    text_lower = text.lower()
-
-    # 1. Мат — высший приоритет
-    if contains_bad_word(text):
+    # 1. Мат
+    if contains_any(text, BAD_WORDS):
         await reply_bad_words(update, context)
         return
 
-    # 2. Слово "деньги"
-    if 'деньги' in text_lower.split():
+    # 2. Смайлы
+    if contains_funny_emoji(text):
+        await reply_funny_emoji(update, context)
+        return
+
+    # 3. Имена (высокий приоритет)
+    words = text_to_words(text)
+    if 'элина' in words:
+        await reply_elina(update, context)
+        return
+    if 'эрик' in words:
+        await reply_erik(update, context)
+        return
+
+    # 4. Слово "спасибо"
+    if contains_any(text, THANKS_WORDS):
+        await reply_thanks(update, context)
+        return
+
+    # 5. Деньги / Денег
+    text_lower = text.lower()
+    if 'деньги' in text_lower.split() or 'денег' in text_lower.split():
         await reply_money(update, context)
         return
 
-    # 3. Слова "понял"/"поняла"
-    if contains_understand_word(text):
-        await reply_understand(update, context)
+    # 6. Ок
+    if contains_any(text, OK_WORDS):
+        await reply_ok(update, context)
         return
 
-    # 4. Слово "есть" (как отдельное слово)
-    if contains_eat_word(text):
+    # 7. Еда
+    if contains_any(text, EAT_WORDS):
         await reply_eat(update, context)
         return
 
-    # 5. Пересылки и ссылки
+    # 8. Пересылки и ссылки
     if update.message.forward_date:
         await reply_forward_or_link(update, context)
         return
@@ -102,25 +134,22 @@ async def handle_text(update, context):
 # === Команды ===
 
 async def start(update, context):
-    await update.message.reply_text(
-        "Привет! Я семейный помощник 🍬\n"
-        "Фото → похвалю!\n"
-        "Мат → по губам!\n"
-        "«Деньги» → не будет!\n"
-        "«Понял/поняла» → уточню!\n"
-        "«Есть» → на попе шерсть!\n"
-        "Ссылки/пересылки → «А это точно тут нужно?»"
-    )
+    await update.message.reply_text("Привет! Я семейный помощник 🍬\nПиши — я отвечу по правилам!")
 
 async def help_command(update, context):
     await update.message.reply_text(
         "Я реагирую на:\n"
         "📷 Фото → «Ты молодец! Держи конфетку!»\n"
         "🤬 Мат → «Получишь по губам и рукам!»\n"
-        "💰 «Деньги» → «Денег нет! Не было! И не будет!»\n"
-        "🧠 «Понял/Поняла» → «Точно понятно?! Или ещё несколько раз объяснить?»\n"
-        "🍽️ «Есть» → «На попе шерсть!»\n"
-        "🔁 Пересылки / 🔗 Ссылки → «А это точно тут нужно?»"
+        "🙏 «Спасибо» → «Пожалуйста, обращайся»\n"
+        "💰 «Деньги/Денег» → «Денег нет! Не было! И не будет!»\n"
+        "👌 «Ок» → «не окейкай мне тут»\n"
+        "🍽️ «Кушать/Кушали/Ели» → «Бегом жрать вам сказали!»\n"
+        "👶 «Элина» → «ЭЛИНА!!!»\n"
+        "👦 «Эрик» → «ЭРИК!!!»\n"
+        "😂 Смайлы → «Не вижу ничего смешного!»\n"
+        "🎵 Музыка → «Ща будут дЫки танци»\n"
+        "🎤 Голосовые → «Че лень букафками общаться»"
     )
 
 # === Запуск ===
@@ -129,12 +158,27 @@ def main():
     token = os.getenv("BOT_TOKEN")
     app = Application.builder().token(token).build()
     
+    # Команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    
+    # Фото
     app.add_handler(MessageHandler(filters.PHOTO, reply_praise))
+    
+    # Текст
     app.add_handler(MessageHandler(filters.TEXT, handle_text))
+    
+    # Музыка (аудио/файлы с расширением mp3, ogg и т.д.)
+    app.add_handler(MessageHandler(filters.AUDIO, reply_music))
+    app.add_handler(MessageHandler(filters.ATTACHMENT & filters.Document.MimeType("audio/mpeg"), reply_music))
+    app.add_handler(MessageHandler(filters.ATTACHMENT & filters.Document.MimeType("audio/ogg"), reply_music))
+    
+    # Голосовые
+    app.add_handler(MessageHandler(filters.VOICE, reply_voice))
+    
+    # Пересланные без текста/фото
     app.add_handler(MessageHandler(
-        filters.FORWARDED & ~filters.PHOTO & ~filters.TEXT,
+        filters.FORWARDED & ~filters.PHOTO & ~filters.TEXT & ~filters.AUDIO & ~filters.VOICE,
         reply_forward_or_link
     ))
     
